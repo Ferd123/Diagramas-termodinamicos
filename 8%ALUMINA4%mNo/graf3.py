@@ -21,7 +21,7 @@ MNO_PCT = 4.0
 
 FILES_TO_PROCESS = ["30.exp", "35.exp", "40.exp"]
 FILE_COLORS = {
-    "30.exp": "black",
+    "30.exp": "red",
     "35.exp": "blue",
     "40.exp": "green",
 }

@@ -2,7 +2,7 @@
 import math
 import os
 import re
-from typing import List, Optional, TypedDict
+from typing import Any, List, Optional, TypedDict, cast
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -229,7 +229,7 @@ def plot_phase_diagram(
     height = width
     fig = plt.figure(figsize=(width, height))
     fig.patch.set_facecolor("white")
-    tax = fig.add_subplot(111, projection="ternary")
+    tax = cast(Any, fig.add_subplot(111, projection="ternary"))
     tax.set_tlim(0, total_tri)
     tax.set_llim(0, total_tri)
     tax.set_rlim(0, total_tri)
@@ -258,7 +258,7 @@ def plot_phase_diagram(
         # FeO ticks along base (SiO2=0)
         pos = ternary_to_axes_fraction(v, 0.0, total_tri - v)
         if pos:
-            x, y = pos
+            x, y = (float(pos[0]), float(pos[1]))
             tax.plot([x, x], [y, y - tick_len], transform=tax.transAxes,
                      color="black", linewidth=0.6, clip_on=False)
             tax.text(x, y - label_offset, f"{v:g}", transform=tax.transAxes,
@@ -267,7 +267,7 @@ def plot_phase_diagram(
         # MgO ticks along left edge (FeO=0)
         pos = ternary_to_axes_fraction(0.0, total_tri - v, v)
         if pos:
-            x, y = pos
+            x, y = (float(pos[0]), float(pos[1]))
             tax.plot(
                 [x, x + left_normal[0] * tick_len],
                 [y, y + left_normal[1] * tick_len],
@@ -290,7 +290,7 @@ def plot_phase_diagram(
         # SiO2 ticks along right edge (MgO=0)
         pos = ternary_to_axes_fraction(total_tri - v, v, 0.0)
         if pos:
-            x, y = pos
+            x, y = (float(pos[0]), float(pos[1]))
             tax.plot(
                 [x, x + right_normal[0] * tick_len],
                 [y, y + right_normal[1] * tick_len],
@@ -346,10 +346,53 @@ def plot_phase_diagram(
         "#8338ec", "#3d405b", "#8d99ae", "#264653",
     ]
 
+    zone_map = {}
+    zone_order = []
+    zone_centers = {}
+    zone_label_parts = {}
+    has_liquid = False
+    has_liquid_mgo = False
+    grouped_ids = {10: 7, 7: 7, 9: 8, 8: 8}
+
+    def normalize_phases(phases):
+        clean = []
+        for name in phases:
+            name = name.replace("#", "")
+            if name.startswith("IONIC_LIQ"):
+                name = "Liquid"
+            elif "ca2sio4_alpha_a" in name.lower():
+                name = "Ca₂SiO₄"
+            elif "hatrurite" in name.lower():
+                name = "3CaO.SiO₂"
+            elif name.startswith("HALITE1"):
+                name = "MgO"
+            elif name.startswith("HALITE2"):
+                name = "(Fe,Mg)O"
+            if name not in clean:
+                clean.append(name)
+        return clean
+
+    def format_phases(clean):
+        return " + ".join(clean) if clean else "Unknown"
+
     for block in blocks:
         phases_set = set(block["phases"])
         color_seed = sum(map(ord, "".join(sorted(phases_set))))
         color = colors[color_seed % len(colors)]
+        clean_phases = normalize_phases(block["phases"])
+        zone_key = format_phases(clean_phases)
+        if clean_phases == ["Liquid"]:
+            has_liquid = True
+        if "Liquid" in clean_phases and "MgO" in clean_phases and len(clean_phases) == 2:
+            has_liquid_mgo = True
+        if cao_pct != 30.0:
+            if zone_key not in zone_map:
+                zone_map[zone_key] = len(zone_map) + 1
+                zone_order.append(zone_key)
+            zone_id = zone_map[zone_key]
+            parts = zone_label_parts.setdefault(zone_id, set())
+            for part in clean_phases:
+                parts.add(part)
 
         for segment in block["segments"]:
             if len(segment) == 0:
@@ -358,26 +401,116 @@ def plot_phase_diagram(
             t_vals = []
             l_vals = []
             r_vals = []
+            centers = []
             for feo, sio2 in seg_scaled:
                 mgo = total_tri - feo - sio2
                 if mgo < 0:
                     if len(t_vals) >= 2:
-                        tax.plot(t_vals, l_vals, r_vals, color=color, linewidth=0.8)
+                        tax.plot(np.asarray(t_vals), np.asarray(l_vals), np.asarray(r_vals),
+                                 color=color, linewidth=0.8)
                     t_vals = []
                     l_vals = []
                     r_vals = []
+                    centers = []
                     continue
                 t_vals.append(sio2)
                 l_vals.append(mgo)
                 r_vals.append(feo)
+                centers.append((sio2, mgo, feo))
             if len(t_vals) >= 2:
-                tax.plot(t_vals, l_vals, r_vals, color=color, linewidth=1.1)
+                tax.plot(np.asarray(t_vals), np.asarray(l_vals), np.asarray(r_vals),
+                         color=color, linewidth=1.1)
+                if cao_pct != 30.0 and centers:
+                    c_t = float(np.mean([c[0] for c in centers]))
+                    c_l = float(np.mean([c[1] for c in centers]))
+                    c_r = float(np.mean([c[2] for c in centers]))
+                    if cao_pct in (35.0, 40.0):
+                        zone_id = grouped_ids.get(zone_id, zone_id)
+                        zone_centers.setdefault(zone_id, []).append((c_t, c_l, c_r))
+                    else:
+                        zone_id = grouped_ids.get(zone_id, zone_id)
+                        tax.text(
+                            c_t,
+                            c_l,
+                            c_r,
+                            str(zone_id),
+                            ha="center",
+                            va="center",
+                            fontsize=9,
+                            color="black",
+                        )
 
     tax.set_title(
         f"Diagrama ternario (Al$_2$O$_3$ {al2o3_pct}%, MnO {mno_pct}%) - CaO{base_name.replace('.exp', '')}%",
         fontsize=11,
         pad=14,
     )
+    if cao_pct in (35.0, 40.0) and zone_centers:
+        for zone_id, pts in zone_centers.items():
+            c_t = float(np.mean([p[0] for p in pts]))
+            c_l = float(np.mean([p[1] for p in pts]))
+            c_r = float(np.mean([p[2] for p in pts]))
+            tax.text(
+                c_t,
+                c_l,
+                c_r,
+                str(zone_id),
+                ha="center",
+                va="center",
+                fontsize=9,
+                color="black",
+            )
+    if cao_pct == 30.0:
+        if has_liquid_mgo:
+            tax.text(
+                0.5,
+                0.2,
+                "Liquid + MgO",
+                transform=tax.transAxes,
+                ha="center",
+                va="top",
+                fontsize=12,
+                clip_on=False,
+            )
+        if has_liquid:
+            tax.text(
+                0.5,
+                0.7,
+                "Liquid",
+                transform=tax.transAxes,
+                ha="center",
+                va="bottom",
+                fontsize=12,
+                clip_on=False,
+            )
+    elif zone_order:
+        grouped_labels = {}
+        for zone_key in zone_order:
+            zone_id = zone_map[zone_key]
+            group_id = grouped_ids.get(zone_id, zone_id)
+            parts = zone_label_parts.get(zone_id, set())
+            grouped_labels.setdefault(group_id, set()).update(parts)
+        legend_lines = []
+        used_groups = set()
+        for zone_key in zone_order:
+            zone_id = zone_map[zone_key]
+            group_id = grouped_ids.get(zone_id, zone_id)
+            if group_id in used_groups:
+                continue
+            used_groups.add(group_id)
+            parts = sorted(grouped_labels.get(group_id, set()))
+            label = " + ".join(parts) if parts else zone_key
+            legend_lines.append(f"{group_id} = {label}")
+        tax.text(
+            0.02,
+            0.98,
+            "\n".join(legend_lines),
+            transform=tax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=9,
+            bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
+        )
     plt.tight_layout()
     output_path = None
     if save:

@@ -306,6 +306,8 @@ def draw_triangle(ax):
 
 
 def plot_exp_on_ternary(ax, filename, color):
+    if filename != "35.exp":
+        return
     script_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(script_dir, filename)
 
@@ -365,6 +367,26 @@ def plot_exp_on_ternary(ax, filename, color):
     for idx, (xy, phase_label) in enumerate(segments_xy):
         seg_color = color
         ax.plot(xy[:, 0], xy[:, 1], color=seg_color, linewidth=0.9)
+
+    if filename == "35.exp":
+        for block in blocks:
+            for segment in block["segments"]:
+                if len(segment) == 0:
+                    continue
+                seg_scaled = segment * scale
+                valid_points = []
+                for feo, sio2 in seg_scaled:
+                    mgo = total_tri - feo - sio2
+                    if mgo < 0:
+                        if len(valid_points) >= 2:
+                            xy = np.array([ternary_to_xy(*p) for p in valid_points])
+                            ax.plot(xy[:, 0], xy[:, 1], color="black", linewidth=0.7)
+                        valid_points = []
+                        continue
+                    valid_points.append((feo, sio2, mgo))
+                if len(valid_points) >= 2:
+                    xy = np.array([ternary_to_xy(*p) for p in valid_points])
+                    ax.plot(xy[:, 0], xy[:, 1], color="black", linewidth=0.7)
 
 def plot_eaf_points(ax, show_table=True, add_legend=True):
     points = puntos_EAF_completos()

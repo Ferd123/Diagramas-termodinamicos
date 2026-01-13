@@ -2,6 +2,7 @@
 import math
 import os
 import re
+from typing import List, Optional, TypedDict
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -52,10 +53,23 @@ MNO_PCT = 4.0
 
 
 #%%
+class ThermoCalcMetadata(TypedDict):
+    xscale: Optional[List[float]]
+    yscale: Optional[List[float]]
+    xtext: Optional[str]
+    ytext: Optional[str]
+
+
+#%%
 def parse_thermocalc_exp(content):
     blocks = []
     current_block = None
-    metadata = {"xscale": None, "yscale": None, "xtext": None, "ytext": None}
+    metadata: ThermoCalcMetadata = {
+        "xscale": None,
+        "yscale": None,
+        "xtext": None,
+        "ytext": None,
+    }
 
     number_pattern = re.compile(r"[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?")
     lines = content.split("\n")
@@ -221,19 +235,111 @@ def plot_phase_diagram(
     tax.set_rlim(0, total_tri)
     tax.grid(True, linewidth=0.6, color="#c7c7c7", linestyle="--")
 
-    tick_vals = np.arange(0, total_tri + 0.1, 10)
-    tax.taxis.set_ticks(tick_vals)
-    tax.laxis.set_ticks(tick_vals)
-    tax.raxis.set_ticks(tick_vals)
-    tax.tick_params(axis="t", labelsize=9, width=0.8, length=4, direction="inout")
-    tax.tick_params(axis="l", labelsize=9, width=0.8, length=4, direction="inout")
-    tax.tick_params(axis="r", labelsize=9, width=0.8, length=4, direction="inout")
+    tick_vals = list(np.arange(10, math.floor(total_tri / 10) * 10 + 0.1, 10))
+    tax.taxis.set_ticks([])
+    tax.laxis.set_ticks([])
+    tax.raxis.set_ticks([])
+
+    def ternary_to_axes_fraction(feo, sio2, mgo):
+        total = feo + sio2 + mgo
+        if total <= 0:
+            return None
+        feo /= total
+        sio2 /= total
+        x = feo + 0.5 * sio2
+        y = (math.sqrt(3.0) / 2.0) * sio2
+        return x, y / (math.sqrt(3.0) / 2.0)
+
+    tick_len = 0.02
+    label_offset = 0.04
+    left_normal = (-0.894, 0.447)
+    right_normal = (0.894, 0.447)
+    for v in tick_vals:
+        # FeO ticks along base (SiO2=0)
+        pos = ternary_to_axes_fraction(v, 0.0, total_tri - v)
+        if pos:
+            x, y = pos
+            tax.plot([x, x], [y, y - tick_len], transform=tax.transAxes,
+                     color="black", linewidth=0.6, clip_on=False)
+            tax.text(x, y - label_offset, f"{v:g}", transform=tax.transAxes,
+                     ha="center", va="top", fontsize=9, clip_on=False)
+
+        # MgO ticks along left edge (FeO=0)
+        pos = ternary_to_axes_fraction(0.0, total_tri - v, v)
+        if pos:
+            x, y = pos
+            tax.plot(
+                [x, x + left_normal[0] * tick_len],
+                [y, y + left_normal[1] * tick_len],
+                transform=tax.transAxes,
+                color="black",
+                linewidth=0.6,
+                clip_on=False,
+            )
+            tax.text(
+                x + left_normal[0] * label_offset,
+                y + left_normal[1] * label_offset,
+                f"{v:g}",
+                transform=tax.transAxes,
+                ha="right",
+                va="center",
+                fontsize=9,
+                clip_on=False,
+            )
+
+        # SiO2 ticks along right edge (MgO=0)
+        pos = ternary_to_axes_fraction(total_tri - v, v, 0.0)
+        if pos:
+            x, y = pos
+            tax.plot(
+                [x, x + right_normal[0] * tick_len],
+                [y, y + right_normal[1] * tick_len],
+                transform=tax.transAxes,
+                color="black",
+                linewidth=0.6,
+                clip_on=False,
+            )
+            tax.text(
+                x + right_normal[0] * label_offset,
+                y + right_normal[1] * label_offset,
+                f"{v:g}",
+                transform=tax.transAxes,
+                ha="left",
+                va="center",
+                fontsize=9,
+                clip_on=False,
+            )
 
     # Ejes solicitados: izquierda MgO, derecha FeO, arriba SiO2
     max_label = f"{total_tri:.1f}%"
-    tax.set_llabel(f"{max_label} MgO", fontsize=10, labelpad=14)
-    tax.set_rlabel(f"{max_label} FeO", fontsize=10, labelpad=14)
-    tax.set_tlabel(f"{max_label} SiO$_2$", fontsize=10, labelpad=14)
+    left_label = f"{max_label} MgO"
+    right_label = f"{max_label} FeO"
+    top_label = f"{max_label} SiO$_2$"
+    tax.set_llabel("")
+    tax.set_rlabel("")
+    tax.set_tlabel(top_label, fontsize=10, labelpad=14)
+    tax.text(
+        -0.15,
+        -0.02,
+        left_label,
+        transform=tax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=10,
+        rotation=0,
+        clip_on=False,
+    )
+    tax.text(
+        1.15,
+        -0.02,
+        right_label,
+        transform=tax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=10,
+        rotation=0,
+        clip_on=False,
+    )
 
     colors = [
         "#0b1f3a", "#2a6f97", "#52b788", "#ef476f", "#f4a261",

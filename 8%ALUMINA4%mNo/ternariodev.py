@@ -7,7 +7,7 @@ import re
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colors as mcolors
+from matplotlib.lines import Line2D
 
 #%%
 SINGLE_COLUMN_MM = 85
@@ -210,14 +210,6 @@ def extract_cao_from_filename(filename):
         raise ValueError(f"No se pudo extraer CaO desde {filename}")
     return float(match.group(1))
 
-def warm_shade(base_color, t):
-    rgb = np.array(mcolors.to_rgb(base_color))
-    warm = np.array([0.85, 0.35, 0.15])
-    warm_mix = 0.15 + 0.35 * t
-    color = (1.0 - warm_mix) * rgb + warm_mix * warm
-    darken = 1.0 - (0.15 + 0.35 * t)
-    return tuple(np.clip(color * darken, 0.0, 1.0))
-
 def format_phase_label(phases):
     seen: list[str] = []
     for p in phases:
@@ -239,7 +231,7 @@ def format_phase_label(phases):
     return " + ".join(pretty)
 
 
-def draw_ternary_grid(ax, step=10, color="0.85", linewidth=0.6):
+def draw_ternary_grid(ax, step=20, color="0.85", linewidth=0.6):
     for val in range(step, 100, step):
         # Constant SiO2 (parallel to base)
         p1 = ternary_to_xy(0.0, val, 100.0 - val)
@@ -257,9 +249,9 @@ def draw_ternary_grid(ax, step=10, color="0.85", linewidth=0.6):
         ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linewidth=linewidth)
 
 
-def draw_ternary_ticks(ax, step=10):
+def draw_ternary_ticks(ax, step=20):
     tick_len = 0.015
-    font_size = 8
+    font_size = 12
     for val in range(step, 100, step):
         # FeO ticks along base (SiO2=0)
         x, y = ternary_to_xy(val, 0.0, 100.0 - val)
@@ -283,17 +275,14 @@ def draw_triangle(ax):
     ax.plot(triangle[:, 0], triangle[:, 1], color="black", linewidth=1.0)
 
     # Axis labels
-    ax.text(-0.02, -0.03, "MgO", ha="left", va="top", fontsize=10)
-    ax.text(1.02, -0.03, "FeO", ha="right", va="top", fontsize=10)
-    ax.text(0.5, h + 0.03, "SiO2", ha="center", va="bottom", fontsize=10)
+    ax.text(-0.1, -0.03, "MgO 48-58", ha="left", va="top", fontsize=13)
+    ax.text(1.1, -0.03, "FeO 48-58", ha="right", va="top", fontsize=13)
+    ax.text(0.5, h + 0.03, "SiO2 48-58", ha="center", va="bottom", fontsize=13)
 
     # Corner values
-    ax.text(-0.01, 0.02, "100", ha="right", va="bottom", fontsize=8)
-    ax.text(1.01, 0.02, "100", ha="left", va="bottom", fontsize=8)
-    ax.text(0.5, h + 0.015, "100", ha="center", va="bottom", fontsize=8)
 
-    draw_ternary_grid(ax, step=10)
-    draw_ternary_ticks(ax, step=10)
+    draw_ternary_grid(ax, step=20)
+    draw_ternary_ticks(ax, step=20)
 
     ax.set_aspect("equal")
     ax.set_xlim(-0.05, 1.05)
@@ -346,23 +335,21 @@ def plot_exp_on_ternary(ax, filename, color):
                 if mgo < 0:
                     if len(valid_points) >= 2:
                         xy = np.array([ternary_to_xy(*p) for p in valid_points])
-                        segments_xy.append(xy)
+                        segments_xy.append((xy, phase_label))
                     valid_points = []
                     continue
                 valid_points.append((feo, sio2, mgo))
 
             if len(valid_points) >= 2:
                 xy = np.array([ternary_to_xy(*p) for p in valid_points])
-                segments_xy.append(xy)
+                segments_xy.append((xy, phase_label))
 
     if not segments_xy:
         return
 
-    total = len(segments_xy)
-    for idx, xy in enumerate(segments_xy):
-        t = idx / max(total - 1, 1)
-        seg_color = warm_shade(color, t)
-        ax.plot(xy[:, 0], xy[:, 1], color=seg_color, linewidth=0.8)
+    for idx, (xy, phase_label) in enumerate(segments_xy):
+        seg_color = color
+        ax.plot(xy[:, 0], xy[:, 1], color=seg_color, linewidth=0.9)
 
 def plot_eaf_points(ax):
     points = puntos_EAF_completos()
@@ -393,6 +380,25 @@ def run_graf3(show=True, save=False):
     for filename in FILES_TO_PROCESS:
         color = FILE_COLORS.get(filename, "black")
         plot_exp_on_ternary(ax, filename, color)
+
+    legend_lines = [
+        Line2D([0], [0], color=FILE_COLORS["30.exp"], lw=1.2),
+        Line2D([0], [0], color=FILE_COLORS["35.exp"], lw=1.2),
+        Line2D([0], [0], color=FILE_COLORS["40.exp"], lw=1.2),
+    ]
+    legend_labels = [
+        "30% CaO",
+        "35% CaO",
+        "40% CaO",
+    ]
+    ax.legend(
+        legend_lines,
+        legend_labels,
+        loc="upper left",
+        bbox_to_anchor=(0.8, 0.8),
+        frameon=False,
+        fontsize=12,
+    )
 
     plot_eaf_points(ax)
 

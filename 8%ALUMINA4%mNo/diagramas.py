@@ -1,3 +1,4 @@
+#%%
 import math
 import os
 import re
@@ -14,6 +15,7 @@ SINGLE_COLUMN_MM = 85
 DOUBLE_COLUMN_MM = 170
 MM_TO_INCH = 1 / 25.4
 
+#%%
 mpl.rcParams.update({
     "font.family": "serif",
     "font.serif": ["Times New Roman"],
@@ -49,6 +51,7 @@ AL2O3_PCT = 8.0
 MNO_PCT = 4.0
 
 
+#%%
 def parse_thermocalc_exp(content):
     blocks = []
     current_block = None
@@ -157,7 +160,22 @@ def extract_label(text_line):
     return LABEL_MAP.get(key, key)
 
 
-def plot_phase_diagram(exp_path, figures_dir):
+#%%
+def get_base_dir():
+    if "__file__" in globals():
+        return os.path.dirname(os.path.abspath(__file__))
+    return os.getcwd()
+
+
+def plot_phase_diagram(
+    exp_path,
+    figures_dir=None,
+    *,
+    al2o3_pct=AL2O3_PCT,
+    mno_pct=MNO_PCT,
+    show=True,
+    save=False,
+):
     with open(exp_path, "r", encoding="latin-1") as f:
         content = f.read()
 
@@ -179,7 +197,7 @@ def plot_phase_diagram(exp_path, figures_dir):
         print(f"No se pudo extraer CaO desde {base_name}, se omite.")
         return None
 
-    total_tri = 100.0 - AL2O3_PCT - MNO_PCT - cao_pct
+    total_tri = 100.0 - al2o3_pct - mno_pct - cao_pct
     if total_tri <= 0:
         print(f"Total ternario invalido para {base_name}, se omite.")
         return None
@@ -226,23 +244,30 @@ def plot_phase_diagram(exp_path, figures_dir):
                 tax.plot(coords, color=color, linewidth=1.1)
 
     tax.set_title(
-        f"Diagrama ternario (Al$_2$O$_3$ 8%, MnO 4%) - {base_name.replace('.exp', '')}",
+        f"Diagrama ternario (Al$_2$O$_3$ {al2o3_pct}%, MnO {mno_pct}%) - {base_name.replace('.exp', '')}",
         fontsize=11,
         pad=14,
     )
     tax.clear_matplotlib_ticks()
     plt.tight_layout()
-    output_path = os.path.join(
-        figures_dir,
-        f"diagrama_fases_{os.path.basename(exp_path).replace('.exp', '')}.png",
-    )
-    plt.savefig(output_path, bbox_inches="tight")
+    output_path = None
+    if save:
+        if figures_dir is None:
+            raise ValueError("figures_dir es requerido cuando save=True.")
+        output_path = os.path.join(
+            figures_dir,
+            f"diagrama_fases_{os.path.basename(exp_path).replace('.exp', '')}.png",
+        )
+        plt.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
     plt.close(fig)
     return output_path
 
 
+#%%
 def run_diagramas():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = get_base_dir()
     figures_dir = os.path.join(script_dir, "figures")
     os.makedirs(figures_dir, exist_ok=True)
 
@@ -260,5 +285,59 @@ def run_diagramas():
             print(f"Guardado: {output}")
 
 
+#%%
+def interactive_diagramas(base_dir=None):
+    import ipywidgets as widgets
+    from IPython.display import clear_output, display
+
+    base_dir = base_dir or get_base_dir()
+    exp_files = sorted(
+        f for f in os.listdir(base_dir) if f.lower().endswith(".exp")
+    )
+    if not exp_files:
+        print("No se encontraron archivos .exp en la carpeta seleccionada.")
+        return
+
+    figures_dir = os.path.join(base_dir, "figures")
+    os.makedirs(figures_dir, exist_ok=True)
+
+    file_widget = widgets.Dropdown(options=exp_files, description="Archivo")
+    al2o3_widget = widgets.FloatSlider(
+        value=AL2O3_PCT, min=0.0, max=20.0, step=0.5, description="Al2O3 (%)"
+    )
+    mno_widget = widgets.FloatSlider(
+        value=MNO_PCT, min=0.0, max=20.0, step=0.5, description="MnO (%)"
+    )
+    save_widget = widgets.Checkbox(value=False, description="Guardar PNG")
+    output = widgets.Output()
+
+    def render(file_name, al2o3_pct, mno_pct, save_png):
+        exp_path = os.path.join(base_dir, file_name)
+        with output:
+            clear_output(wait=True)
+            plot_phase_diagram(
+                exp_path,
+                figures_dir=figures_dir,
+                al2o3_pct=al2o3_pct,
+                mno_pct=mno_pct,
+                show=True,
+                save=save_png,
+            )
+
+    controls = widgets.VBox([file_widget, al2o3_widget, mno_widget, save_widget])
+    ui = widgets.HBox([controls, output])
+    out = widgets.interactive_output(
+        render,
+        {
+            "file_name": file_widget,
+            "al2o3_pct": al2o3_widget,
+            "mno_pct": mno_widget,
+            "save_png": save_widget,
+        },
+    )
+    display(ui, out)
+
+
+#%%
 if __name__ == "__main__":
     run_diagramas()

@@ -55,24 +55,6 @@ mpl.rcParams.update({
 })
 
 # ==========================================
-# MANUAL LABELS CONFIGURATION
-# ==========================================
-# For ternary plots, you can use either:
-# - x, y (plot coords in ternary space, range 0..1), OR
-# - feo, sio2, mgo (composition in wt%%) and it will convert to ternary coords.
-MANUAL_LABELS = {
-    "30.exp": [
-        # {"text": "Label 1", "feo": 20, "sio2": 15, "mgo": 23, "rot": 0, "color": "black"},
-    ],
-    "35.exp": [
-        # {"text": "Label 2", "x": 0.30, "y": 0.20, "rot": 0, "color": "black"},
-    ],
-    "40.exp": [
-        # {"text": "Label 3", "feo": 10, "sio2": 25, "mgo": 21, "rot": 0, "color": "black"},
-    ],
-}
-
-# ==========================================
 # HELPERS
 # ==========================================
 
@@ -258,14 +240,61 @@ def format_phase_label(phases):
     return " + ".join(pretty)
 
 
+def draw_ternary_grid(ax, step=10, color="0.85", linewidth=0.6):
+    for val in range(step, 100, step):
+        # Constant SiO2 (parallel to base)
+        p1 = ternary_to_xy(0.0, val, 100.0 - val)
+        p2 = ternary_to_xy(100.0 - val, val, 0.0)
+        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linewidth=linewidth)
+
+        # Constant FeO (parallel to left edge)
+        p1 = ternary_to_xy(val, 0.0, 100.0 - val)
+        p2 = ternary_to_xy(val, 100.0 - val, 0.0)
+        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linewidth=linewidth)
+
+        # Constant MgO (parallel to right edge)
+        p1 = ternary_to_xy(0.0, 100.0 - val, val)
+        p2 = ternary_to_xy(100.0 - val, 0.0, val)
+        ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color=color, linewidth=linewidth)
+
+
+def draw_ternary_ticks(ax, step=10):
+    tick_len = 0.015
+    font_size = 8
+    for val in range(step, 100, step):
+        # FeO ticks along base (SiO2=0)
+        x, y = ternary_to_xy(val, 0.0, 100.0 - val)
+        ax.plot([x, x], [y, y - tick_len], color="black", linewidth=0.6)
+        ax.text(x, y - 2.2 * tick_len, f"{val}", ha="center", va="top", fontsize=font_size)
+
+        # MgO ticks along left edge (FeO=0)
+        x, y = ternary_to_xy(0.0, 100.0 - val, val)
+        ax.plot([x - tick_len, x], [y + tick_len * 0.6, y], color="black", linewidth=0.6)
+        ax.text(x - 2.2 * tick_len, y + tick_len * 0.6, f"{val}", ha="right", va="center", fontsize=font_size)
+
+        # SiO2 ticks along right edge (MgO=0)
+        x, y = ternary_to_xy(100.0 - val, val, 0.0)
+        ax.plot([x, x + tick_len], [y, y + tick_len * 0.6], color="black", linewidth=0.6)
+        ax.text(x + 2.2 * tick_len, y + tick_len * 0.6, f"{val}", ha="left", va="center", fontsize=font_size)
+
+
 def draw_triangle(ax):
     h = math.sqrt(3.0) / 2.0
     triangle = np.array([[0.0, 0.0], [1.0, 0.0], [0.5, h], [0.0, 0.0]])
     ax.plot(triangle[:, 0], triangle[:, 1], color="black", linewidth=1.0)
 
+    # Axis labels
     ax.text(-0.02, -0.03, "MgO", ha="left", va="top", fontsize=10)
     ax.text(1.02, -0.03, "FeO", ha="right", va="top", fontsize=10)
     ax.text(0.5, h + 0.03, "SiO2", ha="center", va="bottom", fontsize=10)
+
+    # Corner values
+    ax.text(-0.01, 0.02, "100", ha="right", va="bottom", fontsize=8)
+    ax.text(1.01, 0.02, "100", ha="left", va="bottom", fontsize=8)
+    ax.text(0.5, h + 0.015, "100", ha="center", va="bottom", fontsize=8)
+
+    draw_ternary_grid(ax, step=10)
+    draw_ternary_ticks(ax, step=10)
 
     ax.set_aspect("equal")
     ax.set_xlim(-0.05, 1.05)
@@ -335,43 +364,6 @@ def plot_exp_on_ternary(ax, filename, color):
         t = idx / max(total - 1, 1)
         seg_color = warm_shade(color, t)
         ax.plot(xy[:, 0], xy[:, 1], color=seg_color, linewidth=0.8)
-        mid_idx = len(xy) // 2
-        ax.text(
-            xy[mid_idx, 0],
-            xy[mid_idx, 1],
-            phase_label,
-            fontsize=6,
-            color=seg_color,
-            ha="center",
-            va="center",
-        )
-
-
-def draw_manual_labels(ax, filename):
-    labels = MANUAL_LABELS.get(filename, [])
-    for lbl in labels:
-        if {"feo", "sio2", "mgo"}.issubset(lbl.keys()):
-            xy = ternary_to_xy(lbl["feo"], lbl["sio2"], lbl["mgo"])
-            if xy is None:
-                continue
-            x, y = xy
-        else:
-            x, y = lbl.get("x"), lbl.get("y")
-            if x is None or y is None:
-                continue
-
-        final_text = lbl["text"].replace("//", "\n")
-        ax.text(
-            x,
-            y,
-            final_text,
-            fontsize=6,
-            color=lbl.get("color", "black"),
-            ha="center",
-            va="center",
-            rotation=lbl.get("rot", 0),
-            bbox=dict(facecolor="white", alpha=0.7, edgecolor="none", pad=0.1),
-        )
 
 def plot_eaf_points(ax):
     points = puntos_EAF_completos()
@@ -384,7 +376,7 @@ def plot_eaf_points(ax):
         xs.append(xy[0])
         ys.append(xy[1])
 
-    ax.scatter(xs, ys, c="red", edgecolors="black", linewidth=0.4, s=18, zorder=6, label="EAF data")
+    ax.scatter(xs, ys, c="red", edgecolors="black", linewidth=0.4, s=18, zorder=6)
 
 
 # ==========================================
@@ -408,8 +400,6 @@ def run_graf3():
         plot_exp_on_ternary(ax, filename, color)
 
     plot_eaf_points(ax)
-
-    ax.set_title("Diagrama Ternario FeO-SiO2-MgO (Al2O3 8%, MnO 4%)", fontsize=12)
 
     plt.tight_layout()
     output_path = os.path.join(figures_dir, "ternario_30_35_40.png")

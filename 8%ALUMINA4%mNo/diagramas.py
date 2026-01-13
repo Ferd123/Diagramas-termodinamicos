@@ -51,6 +51,37 @@ LABEL_MAP = {
 AL2O3_PCT = 8.0
 MNO_PCT = 4.0
 
+# Offsets para mover los numeros de zonas (dx, dy) en coordenadas del eje (0-1).
+# Ejemplo: ZONE_LABEL_OFFSETS = {35.0: {2: (0.02, -0.01)}}
+ZONE_LABEL_OFFSETS = {
+    35.0: {
+        1: (0.1, 0.1),
+        2: (0.15, -0.1),
+        3: (-0.1, -0.05),
+        5: (-0.05, -0.01),
+        4: (0.2,-0.25),
+        6: (-0.05,0),
+        7: (-0.01, 0.015),
+        8:(0.05,-0.05)
+    },
+    40.0: {
+        1: (0.2, 0.2),
+        2: (0.15, -0.1),
+        3: (-0.1, -0.05),
+        5: (-0.05, -0.01),
+        4: (0.2,-0.25),
+        6: (-0.05,0),
+        7: (-0.01, 0.015),
+        9:(-0.2,0.2)
+    },
+}
+# Posicion del cuadro de fases (x, y) en coordenadas del eje (0-1).
+# Ejemplo: ZONE_LEGEND_POS = {35.0: (0.05, 0.95), @40.0: (0.1, 0.9)}
+ZONE_LEGEND_POS = {
+    35.0: (-0.2, 0.95),
+    40.0: (-0.2, 0.9),
+}
+
 
 #%%
 class ThermoCalcMetadata(TypedDict):
@@ -260,9 +291,9 @@ def plot_phase_diagram(
         if pos:
             x, y = (float(pos[0]), float(pos[1]))
             tax.plot([x, x], [y, y - tick_len], transform=tax.transAxes,
-                     color="black", linewidth=0.6, clip_on=False)
+                    color="black", linewidth=0.6, clip_on=False)
             tax.text(x, y - label_offset, f"{v:g}", transform=tax.transAxes,
-                     ha="center", va="top", fontsize=9, clip_on=False)
+                    ha="center", va="top", fontsize=9, clip_on=False)
 
         # MgO ticks along left edge (FeO=0)
         pos = ternary_to_axes_fraction(0.0, total_tri - v, v)
@@ -375,13 +406,32 @@ def plot_phase_diagram(
     def format_phases(clean):
         return " + ".join(clean) if clean else "Unknown"
 
+    def place_zone_label(zone_id, c_t, c_l, c_r):
+        pos = ternary_to_axes_fraction(c_r, c_t, c_l)
+        if not pos:
+            return
+        x, y = (float(pos[0]), float(pos[1]))
+        dx, dy = (0.0, 0.0)
+        if cao_pct in ZONE_LABEL_OFFSETS:
+            dx, dy = ZONE_LABEL_OFFSETS.get(cao_pct, {}).get(zone_id, (0.0, 0.0))
+        tax.text(
+            x + dx,
+            y + dy,
+            str(zone_id),
+            transform=tax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=9,
+            color="black",
+        )
+
     for block in blocks:
         phases_set = set(block["phases"])
         color_seed = sum(map(ord, "".join(sorted(phases_set))))
         color = colors[color_seed % len(colors)]
         clean_phases = normalize_phases(block["phases"])
         zone_key = format_phases(clean_phases)
-        if clean_phases == ["Liquid"]:
+        if "Liquid" in clean_phases:
             has_liquid = True
         if "Liquid" in clean_phases and "MgO" in clean_phases and len(clean_phases) == 2:
             has_liquid_mgo = True
@@ -407,7 +457,7 @@ def plot_phase_diagram(
                 if mgo < 0:
                     if len(t_vals) >= 2:
                         tax.plot(np.asarray(t_vals), np.asarray(l_vals), np.asarray(r_vals),
-                                 color=color, linewidth=0.8)
+                                color=color, linewidth=0.8)
                     t_vals = []
                     l_vals = []
                     r_vals = []
@@ -419,7 +469,7 @@ def plot_phase_diagram(
                 centers.append((sio2, mgo, feo))
             if len(t_vals) >= 2:
                 tax.plot(np.asarray(t_vals), np.asarray(l_vals), np.asarray(r_vals),
-                         color=color, linewidth=1.1)
+                        color=color, linewidth=1.1)
                 if cao_pct != 30.0 and centers:
                     c_t = float(np.mean([c[0] for c in centers]))
                     c_l = float(np.mean([c[1] for c in centers]))
@@ -429,16 +479,7 @@ def plot_phase_diagram(
                         zone_centers.setdefault(zone_id, []).append((c_t, c_l, c_r))
                     else:
                         zone_id = grouped_ids.get(zone_id, zone_id)
-                        tax.text(
-                            c_t,
-                            c_l,
-                            c_r,
-                            str(zone_id),
-                            ha="center",
-                            va="center",
-                            fontsize=9,
-                            color="black",
-                        )
+                        place_zone_label(zone_id, c_t, c_l, c_r)
 
     tax.set_title(
         f"Diagrama ternario (Al$_2$O$_3$ {al2o3_pct}%, MnO {mno_pct}%) - CaO{base_name.replace('.exp', '')}%",
@@ -450,16 +491,7 @@ def plot_phase_diagram(
             c_t = float(np.mean([p[0] for p in pts]))
             c_l = float(np.mean([p[1] for p in pts]))
             c_r = float(np.mean([p[2] for p in pts]))
-            tax.text(
-                c_t,
-                c_l,
-                c_r,
-                str(zone_id),
-                ha="center",
-                va="center",
-                fontsize=9,
-                color="black",
-            )
+            place_zone_label(zone_id, c_t, c_l, c_r)
     if cao_pct == 30.0:
         if has_liquid_mgo:
             tax.text(
@@ -484,6 +516,7 @@ def plot_phase_diagram(
                 clip_on=False,
             )
     elif zone_order:
+        legend_pos = ZONE_LEGEND_POS.get(cao_pct, (0.02, 0.98))
         grouped_labels = {}
         for zone_key in zone_order:
             zone_id = zone_map[zone_key]
@@ -501,15 +534,18 @@ def plot_phase_diagram(
             parts = sorted(grouped_labels.get(group_id, set()))
             label = " + ".join(parts) if parts else zone_key
             legend_lines.append(f"{group_id} = {label}")
+        if has_liquid and not any("Liquid" == line.split(" = ", 1)[1] for line in legend_lines):
+            liquid_id = zone_map.get("Liquid", max(zone_map.values() or [0]) + 1)
+            legend_lines.append(f"{liquid_id} = Liquid")
         tax.text(
-            0.02,
-            0.98,
+            legend_pos[0],
+            legend_pos[1],
             "\n".join(legend_lines),
             transform=tax.transAxes,
             ha="left",
             va="top",
             fontsize=9,
-            bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "alpha": 0.8},
+            bbox={"boxstyle": "round,pad=0.3", "facecolor": "none", "edgecolor": "none"},
         )
     plt.tight_layout()
     output_path = None

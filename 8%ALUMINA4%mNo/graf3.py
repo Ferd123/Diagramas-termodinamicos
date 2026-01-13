@@ -6,6 +6,7 @@ import re
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import cm, colors as mcolors
 from matplotlib.lines import Line2D
 
 # ==========================================
@@ -29,6 +30,8 @@ EXCLUDED_PHASE_LABELS_BLUE = {
     "Liquido#1 + Liquido#3 + Halite#1 + Halite#2",
     "Liquido#1 + Liquido#2 + Halite#1 + Halite#2",
 }
+LINE_LEGEND_ANCHOR = (1.02, 1.0)
+EAF_LEGEND_ANCHOR = (0.02, 0.5)
 
 mpl.rcParams.update({
     "font.family": "serif",
@@ -84,6 +87,14 @@ def puntos_EAF_completos():
         {"FeO":27.3, "SiO2":17.3, "CaO":38.4, "MgO":5.39, "Al2O3":4.67, "MnO":3.90, "label":"Malaysia"},
         {"FeO":25.9, "SiO2":19.5, "CaO":40.5, "MgO":4.25, "Al2O3":4.88, "MnO":3.00, "label":"Iran"},
     ]
+
+def build_eaf_color_table(points):
+    cmap = cm.get_cmap("tab20", len(points))
+    table = []
+    for idx, p in enumerate(points, 1):
+        color = mcolors.to_hex(cmap(idx - 1))
+        table.append({"idx": idx, "label": p["label"], "color": color})
+    return table
 
 def parse_thermocalc_exp(content):
     blocks = []
@@ -355,18 +366,52 @@ def plot_exp_on_ternary(ax, filename, color):
         seg_color = color
         ax.plot(xy[:, 0], xy[:, 1], color=seg_color, linewidth=0.9)
 
-def plot_eaf_points(ax):
+def plot_eaf_points(ax, show_table=True, add_legend=True):
     points = puntos_EAF_completos()
+    table = build_eaf_color_table(points)
     xs = []
     ys = []
+    colors = []
     for p in points:
         xy = ternary_to_xy(p["FeO"], p["SiO2"], p["MgO"])
         if xy is None:
             continue
         xs.append(xy[0])
         ys.append(xy[1])
+        colors.append(table[len(colors)]["color"])
 
-    ax.scatter(xs, ys, c="red", edgecolors="black", linewidth=0.4, s=18, zorder=6)
+    ax.scatter(xs, ys, c=colors, edgecolors="black", linewidth=0.4, s=18, zorder=6)
+    if show_table:
+        print("EAF points color table:")
+        for row in table:
+            print(f"{row['idx']:>2}. {row['label']}: {row['color']}")
+    if add_legend:
+        handles = [
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="none",
+                markerfacecolor=row["color"],
+                markeredgecolor="black",
+                markersize=5,
+            )
+            for row in table
+        ]
+        labels = [f"{row['idx']}. {row['label']}" for row in table]
+        ax.legend(
+            handles,
+            labels,
+            loc="center left",
+            bbox_to_anchor=EAF_LEGEND_ANCHOR,
+            frameon=True,
+            facecolor="none",
+            edgecolor="none",
+            framealpha=0.0,
+            fontsize=7,
+            title="EAF points",
+            title_fontsize=8,
+        )
 
 
 # ==========================================
@@ -399,16 +444,17 @@ def run_graf3():
         "35% CaO",
         "40% CaO",
     ]
-    ax.legend(
+    line_legend = ax.legend(
         legend_lines,
         legend_labels,
         loc="upper left",
-        bbox_to_anchor=(1.02, 1.0),
+        bbox_to_anchor=LINE_LEGEND_ANCHOR,
         frameon=False,
         fontsize=9,
     )
+    ax.add_artist(line_legend)
 
-    plot_eaf_points(ax)
+    plot_eaf_points(ax, show_table=True, add_legend=True)
 
     plt.tight_layout()
     output_path = os.path.join(figures_dir, "ternario_30_35_40.png")

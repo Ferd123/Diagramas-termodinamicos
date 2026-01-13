@@ -5,8 +5,8 @@ import re
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import mpltern  # noqa: F401
 import numpy as np
-import ternary
 
 # ==========================================
 # CONSTANTS & CONFIG
@@ -41,10 +41,10 @@ mpl.rcParams.update({
 })
 
 LABEL_MAP = {
-    "PCTFEO": "FeO (%)",
-    "PCTSIO2": "SiO$_2$ (%)",
-    "PCTMGO": "MgO (%)",
-    "PCTCAO": "CaO (%)",
+    "PCTFEO": "% FeO",
+    "PCTSIO2": "% SiO$_2$",
+    "PCTMGO": "% MgO",
+    "PCTCAO": "% CaO",
 }
 
 AL2O3_PCT = 8.0
@@ -161,6 +161,18 @@ def extract_label(text_line):
 
 
 #%%
+def parse_cao_from_filename(base_name):
+    matches = re.findall(r"(\d+(?:[.,]\d+)?)", base_name)
+    if not matches:
+        return None
+    value = matches[0].replace(",", ".")
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+#%%
 def get_base_dir():
     if "__file__" in globals():
         return os.path.dirname(os.path.abspath(__file__))
@@ -188,10 +200,7 @@ def plot_phase_diagram(
     y_label = extract_label(metadata.get("ytext")) or "SiO$_2$ (%)"
 
     base_name = os.path.basename(exp_path)
-    cao_pct = None
-    match = re.search(r"(\d+)", base_name)
-    if match:
-        cao_pct = float(match.group(1))
+    cao_pct = parse_cao_from_filename(base_name)
 
     if cao_pct is None:
         print(f"No se pudo extraer CaO desde {base_name}, se omite.")
@@ -204,18 +213,27 @@ def plot_phase_diagram(
 
     width = DOUBLE_COLUMN_MM * MM_TO_INCH
     height = width
-    fig, ax = plt.subplots(figsize=(width, height))
+    fig = plt.figure(figsize=(width, height))
     fig.patch.set_facecolor("white")
-    tax = ternary.TernaryAxesSubplot(ax=ax, scale=total_tri)
+    tax = fig.add_subplot(111, projection="ternary")
+    tax.set_tlim(0, total_tri)
+    tax.set_llim(0, total_tri)
+    tax.set_rlim(0, total_tri)
+    tax.grid(True, linewidth=0.6, color="#c7c7c7", linestyle="--")
 
-    tax.boundary(linewidth=1.2, axes_colors={"l": "black", "r": "black", "b": "black"})
-    tax.gridlines(multiple=10, linewidth=0.6, color="#c7c7c7", linestyle="--")
-    tax.ticks(axis="lbr", multiple=10, linewidth=0.9, offset=0.02, fontsize=9)
+    tick_vals = np.arange(0, total_tri + 0.1, 10)
+    tax.taxis.set_ticks(tick_vals)
+    tax.laxis.set_ticks(tick_vals)
+    tax.raxis.set_ticks(tick_vals)
+    tax.tick_params(axis="t", labelsize=9, width=0.8, length=4, direction="inout")
+    tax.tick_params(axis="l", labelsize=9, width=0.8, length=4, direction="inout")
+    tax.tick_params(axis="r", labelsize=9, width=0.8, length=4, direction="inout")
 
-    # Ejes solicitados: izquierdo SiO2, base FeO, derecho MgO
-    tax.left_axis_label("SiO$_2$ (%)", fontsize=10, offset=0.14)
-    tax.right_axis_label("MgO (%)", fontsize=10, offset=0.14)
-    tax.bottom_axis_label("FeO (%)", fontsize=10, offset=0.14)
+    # Ejes solicitados: izquierda MgO, derecha FeO, arriba SiO2
+    max_label = f"{total_tri:.1f}%"
+    tax.set_llabel(f"{max_label} MgO", fontsize=10, labelpad=14)
+    tax.set_rlabel(f"{max_label} FeO", fontsize=10, labelpad=14)
+    tax.set_tlabel(f"{max_label} SiO$_2$", fontsize=10, labelpad=14)
 
     colors = [
         "#0b1f3a", "#2a6f97", "#52b788", "#ef476f", "#f4a261",
@@ -231,24 +249,29 @@ def plot_phase_diagram(
             if len(segment) == 0:
                 continue
             seg_scaled = segment * scale
-            coords = []
+            t_vals = []
+            l_vals = []
+            r_vals = []
             for feo, sio2 in seg_scaled:
                 mgo = total_tri - feo - sio2
                 if mgo < 0:
-                    if len(coords) >= 2:
-                        tax.plot(coords, color=color, linewidth=0.8)
-                    coords = []
+                    if len(t_vals) >= 2:
+                        tax.plot(t_vals, l_vals, r_vals, color=color, linewidth=0.8)
+                    t_vals = []
+                    l_vals = []
+                    r_vals = []
                     continue
-                coords.append((sio2, mgo, feo))
-            if len(coords) >= 2:
-                tax.plot(coords, color=color, linewidth=1.1)
+                t_vals.append(sio2)
+                l_vals.append(mgo)
+                r_vals.append(feo)
+            if len(t_vals) >= 2:
+                tax.plot(t_vals, l_vals, r_vals, color=color, linewidth=1.1)
 
     tax.set_title(
-        f"Diagrama ternario (Al$_2$O$_3$ {al2o3_pct}%, MnO {mno_pct}%) - {base_name.replace('.exp', '')}",
+        f"Diagrama ternario (Al$_2$O$_3$ {al2o3_pct}%, MnO {mno_pct}%) - CaO{base_name.replace('.exp', '')}%",
         fontsize=11,
         pad=14,
     )
-    tax.clear_matplotlib_ticks()
     plt.tight_layout()
     output_path = None
     if save:

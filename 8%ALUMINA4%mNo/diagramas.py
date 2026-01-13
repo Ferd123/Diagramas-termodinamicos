@@ -66,10 +66,10 @@ ZONE_LABEL_OFFSETS = {
     },
     40.0: {
         1: (0.2, 0.2),
-        2: (0.15, -0.1),
+        2: (0.12, -0.1),
         3: (-0.1, -0.05),
         5: (-0.05, -0.01),
-        4: (0.2,-0.25),
+        4: (0.16,-0.25),
         6: (-0.05,0),
         7: (-0.01, 0.015),
         9:(-0.2,0.2)
@@ -81,6 +81,14 @@ ZONE_LEGEND_POS = {
     35.0: (-0.2, 0.95),
     40.0: (-0.2, 0.9),
 }
+# Posicion del texto "LIQUID" (x, y) en coordenadas del eje (0-1).
+# Ejemplo: LIQUID_TEXT_POS = {35.0: (0.55, 0.45), 40.0: (0.6, 0.5)}
+LIQUID_TEXT_POS = {
+    30: (0.57,0.6),
+    40.0: (0.57, 0.6),
+    35.0: (0.55, 0.6),
+}
+LIQUID_TEXT_DEFAULT = (0.5, 0.5)
 
 
 #%%
@@ -380,6 +388,7 @@ def plot_phase_diagram(
     zone_map = {}
     zone_order = []
     zone_centers = {}
+    zone_points = {}
     zone_label_parts = {}
     has_liquid = False
     has_liquid_mgo = False
@@ -444,6 +453,7 @@ def plot_phase_diagram(
             for part in clean_phases:
                 parts.add(part)
 
+        block_points = []
         for segment in block["segments"]:
             if len(segment) == 0:
                 continue
@@ -467,6 +477,10 @@ def plot_phase_diagram(
                 l_vals.append(mgo)
                 r_vals.append(feo)
                 centers.append((sio2, mgo, feo))
+                block_points.append((sio2, mgo, feo))
+                if cao_pct != 30.0:
+                    zone_id = grouped_ids.get(zone_id, zone_id)
+                    zone_points.setdefault(zone_id, []).append((sio2, mgo, feo))
             if len(t_vals) >= 2:
                 tax.plot(np.asarray(t_vals), np.asarray(l_vals), np.asarray(r_vals),
                         color=color, linewidth=1.1)
@@ -480,18 +494,49 @@ def plot_phase_diagram(
                     else:
                         zone_id = grouped_ids.get(zone_id, zone_id)
                         place_zone_label(zone_id, c_t, c_l, c_r)
+        if cao_pct in (35.0, 40.0) and block_points:
+            c_t = float(np.mean([p[0] for p in block_points]))
+            c_l = float(np.mean([p[1] for p in block_points]))
+            c_r = float(np.mean([p[2] for p in block_points]))
+            zone_id = grouped_ids.get(zone_id, zone_id)
+            zone_centers.setdefault(zone_id, []).append((c_t, c_l, c_r))
 
     tax.set_title(
         f"Diagrama ternario (Al$_2$O$_3$ {al2o3_pct}%, MnO {mno_pct}%) - CaO{base_name.replace('.exp', '')}%",
         fontsize=11,
         pad=14,
     )
-    if cao_pct in (35.0, 40.0) and zone_centers:
-        for zone_id, pts in zone_centers.items():
+    if cao_pct in (35.0, 40.0):
+        # Etiquetar todas las zonas detectadas usando los puntos del bloque.
+        for zone_id, pts in zone_points.items():
+            if not pts:
+                continue
             c_t = float(np.mean([p[0] for p in pts]))
             c_l = float(np.mean([p[1] for p in pts]))
             c_r = float(np.mean([p[2] for p in pts]))
             place_zone_label(zone_id, c_t, c_l, c_r)
+        # Si aun falta alguna zona, usar el punto con mayor FeO como respaldo.
+        for zone_key in zone_order:
+            zone_id = grouped_ids.get(zone_map[zone_key], zone_map[zone_key])
+            if zone_id in zone_points:
+                continue
+            pts = zone_points.get(zone_id, [])
+            if not pts:
+                continue
+            max_point = max(pts, key=lambda p: p[2])
+            place_zone_label(zone_id, float(max_point[0]), float(max_point[1]), float(max_point[2]))
+    if has_liquid:
+        pos = LIQUID_TEXT_POS.get(cao_pct, LIQUID_TEXT_DEFAULT)
+        tax.text(
+            pos[0],
+            pos[1],
+            "LIQUID",
+            transform=tax.transAxes,
+            ha="center",
+            va="center",
+            fontsize=12,
+            clip_on=False,
+        )
     if cao_pct == 30.0:
         if has_liquid_mgo:
             tax.text(
@@ -501,17 +546,6 @@ def plot_phase_diagram(
                 transform=tax.transAxes,
                 ha="center",
                 va="top",
-                fontsize=12,
-                clip_on=False,
-            )
-        if has_liquid:
-            tax.text(
-                0.5,
-                0.7,
-                "Liquid",
-                transform=tax.transAxes,
-                ha="center",
-                va="bottom",
                 fontsize=12,
                 clip_on=False,
             )
@@ -534,9 +568,16 @@ def plot_phase_diagram(
             parts = sorted(grouped_labels.get(group_id, set()))
             label = " + ".join(parts) if parts else zone_key
             legend_lines.append(f"{group_id} = {label}")
-        if has_liquid and not any("Liquid" == line.split(" = ", 1)[1] for line in legend_lines):
-            liquid_id = zone_map.get("Liquid", max(zone_map.values() or [0]) + 1)
-            legend_lines.append(f"{liquid_id} = Liquid")
+        if cao_pct == 35.0:
+            legend_lines = [
+                line for line in legend_lines
+                if line.split(" = ", 1)[-1].strip() != "Liquid"
+            ]
+            renumbered = []
+            for idx, line in enumerate(legend_lines, start=1):
+                _, label = line.split(" = ", 1)
+                renumbered.append(f"{idx} = {label}")
+            legend_lines = renumbered
         tax.text(
             legend_pos[0],
             legend_pos[1],

@@ -1,0 +1,3 @@
+[flake8]
+per-file-ignores =
+    8%ALUMINA4%mNo/graf3.py: E231,E501,E302,F401

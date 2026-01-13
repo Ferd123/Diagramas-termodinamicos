@@ -1,4 +1,5 @@
-# flake8: noqa
+# %%
+# En VS Code: Shift+Enter ejecuta la celda y muestra resultados abajo (Interactive Window)
 import math
 import os
 import re
@@ -8,9 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colors as mcolors
 
-# ==========================================
-# CONSTANTS & CONFIG
-# ==========================================
+#%%
 SINGLE_COLUMN_MM = 85
 DOUBLE_COLUMN_MM = 170
 MM_TO_INCH = 1 / 25.4
@@ -386,16 +385,12 @@ def plot_eaf_points(ax):
 
     ax.scatter(xs, ys, c="red", edgecolors="black", linewidth=0.4, s=18, zorder=6, label="EAF data")
 
+# %%  (deja todas tus funciones arriba tal cual)
 
-# ==========================================
-# MAIN
-# ==========================================
-
-def run_graf3():
+def run_graf3(show=True, save=False):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     figures_dir = os.path.join(script_dir, "figures")
-    if not os.path.exists(figures_dir):
-        os.makedirs(figures_dir)
+    os.makedirs(figures_dir, exist_ok=True)
 
     width = DOUBLE_COLUMN_MM * MM_TO_INCH
     height = width
@@ -410,13 +405,19 @@ def run_graf3():
     plot_eaf_points(ax)
 
     ax.set_title("Diagrama Ternario FeO-SiO2-MgO (Al2O3 8%, MnO 4%)", fontsize=12)
-
     plt.tight_layout()
-    output_path = os.path.join(figures_dir, "ternario_30_35_40.png")
-    plt.savefig(output_path, bbox_inches="tight")
-    print(f"Guardado: {output_path}")
-    plt.close(fig)
 
+    if save:
+        output_path = os.path.join(figures_dir, "ternario_30_35_40.png")
+        plt.savefig(output_path, bbox_inches="tight")
+        print(f"Guardado: {output_path}")
 
-if __name__ == "__main__":
-    run_graf3()
+    if show:
+        plt.show()  # en Interactive Window aparece inline
+
+    return fig, ax
+# %%
+# Ejecuta sólo esta celda cada vez que cambies algo del plot
+fig, ax = run_graf3(show=True, save=False)
+
+# %%

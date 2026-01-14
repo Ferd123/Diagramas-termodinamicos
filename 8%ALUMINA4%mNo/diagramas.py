@@ -32,6 +32,17 @@ LABEL_MAP = {
 
 # Offsets para mover los numeros de zonas (dx, dy) en coords del eje (0-1)
 ZONE_LABEL_OFFSETS: Dict[float, Dict[int, Tuple[float, float]]] = {
+    30.0: {
+        1: (0.1, 0.1),
+        2: (0.15, -0.1),
+        3: (-0.1, -0.05),
+        4: (0.2, -0.25),
+        5: (-0.05, -0.01),
+        6: (-0.05, 0),
+        7: (-0.01, 0.015),
+        8: (0.05, -0.05),
+        9: (0.2, 0)
+    },
     35.0: {
         1: (0.1, 0.1),
         2: (0.15, -0.1),
@@ -41,16 +52,17 @@ ZONE_LABEL_OFFSETS: Dict[float, Dict[int, Tuple[float, float]]] = {
         6: (-0.05, 0),
         7: (-0.01, 0.015),
         8: (0.05, -0.05),
+        9: (0.2,0)
     },
     40.0: {
         1: (0.2, 0.2),
         2: (0.12, -0.1),
         3: (-0.1, -0.05),
-        4: (0.16, -0.25),
+        4: (0.0, -0.05),
         5: (-0.05, -0.01),
         6: (-0.05, 0),
         7: (-0.01, 0.015),
-        9: (-0.2, 0.2),
+        9: (0.3, -0.38),
     },
 }
 
@@ -71,7 +83,8 @@ ZONE_LEGEND_POS = {
 # Paleta (puedes cambiarla si quieres)
 COLORS = [
     "#0b1f3a", "#2a6f97", "#52b788", "#ef476f", "#f4a261",
-    "#8338ec", "#3d405b", "#8d99ae", "#264653",
+    "#8338ec", "#3d405b", "#8d99ae", "#264653", "#e76f51", "#f4a261",
+    "#e9c46a", "#2a9d8f", "#264653",
 ]
 
 mpl.rcParams.update({
@@ -578,7 +591,20 @@ def plot_phase_diagram(
         for zone_key in zone_order:
             zid = zone_map[zone_key]
             parts = zone_label_parts.get(zid, [])
-            label = " + ".join(parts) if parts else zone_key
+            if not parts:
+                label = zone_key
+            else:
+                final_parts = [p for p in parts if not p.startswith("Liquid")]
+                liquids = {p for p in parts if p.startswith("Liquid")}
+
+                if liquids == {"Liquid 1", "Liquid 2"}:
+                    final_parts.append("Liquid 1")
+                elif liquids == {"Liquid 1", "Liquid 3"}:
+                    final_parts.append("Liquid 2")
+                else:
+                    final_parts.extend(liquids)
+                
+                label = " + ".join(sorted(final_parts))
             lines.append(f"{zid} = {label}")
 
         tax.text(

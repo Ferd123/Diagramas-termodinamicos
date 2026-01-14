@@ -44,25 +44,24 @@ ZONE_LABEL_OFFSETS: Dict[float, Dict[int, Tuple[float, float]]] = {
         9: (0.2, 0)
     },
     35.0: {
-        1: (0.1, 0.1),
-        2: (0.15, -0.1),
+        2: (0.35, -0.4),
         3: (-0.1, -0.05),
-        4: (0.2, -0.25),
         5: (-0.05, -0.01),
-        6: (-0.05, 0),
-        7: (-0.01, 0.015),
+        6: (0.05, -0.1),  # Adjusted for arrow
+        7: (-0.15, 0), # Adjusted for arrow
         8: (0.05, -0.05),
-        9: (0.2,0)
+        9: (0.05, 0.05),
+        10: (0.1, 0.1),   # Added for arrow
     },
     40.0: {
-        1: (0.2, 0.2),
+        1: (0.1, 0.05), # Arrow needed
         2: (0.12, -0.1),
         3: (-0.1, -0.05),
-        4: (0.0, -0.05),
+        4: (-0.12, 0.05),
         5: (-0.05, -0.01),
-        6: (-0.05, 0),
-        7: (-0.01, 0.015),
-        9: (0.3, -0.38),
+        6: (-0.15, 0.1), # Arrow needed
+        7: (-0.15, 0.05), # Adjusted for arrow
+        9: (0.4, -0.47),
     },
 }
 
@@ -76,8 +75,8 @@ LIQUID_TEXT_DEFAULT = (0.5, 0.5)
 
 # Cuadro de leyenda por CaO
 ZONE_LEGEND_POS = {
-    35.0: (-0.2, 0.95),
-    40.0: (-0.2, 0.9),
+    35.0: (-0.2, 1.1),
+    40.0: (-0.2, 1.1),
 }
 
 # Paleta (puedes cambiarla si quieres)
@@ -314,14 +313,19 @@ def normalize_phase_name(name: str) -> str:
     return n
 
 
-def assign_liquid_variants(phases: List[str]) -> List[str]:
+def assign_liquid_variants(phases: List[str], cao_pct: Optional[float] = None) -> List[str]:
     """
     Regla pedida:
       - No agrupar nada excepto líquidos.
       - Si existen Liquid 1 y Liquid 2 (o 2 y 3, etc) conservarlos.
       - Si no se puede inferir índice, colapsar a Liquid 1 si solo hay un líquido.
+      - Excepción: Si cao_pct == 35.0, forzar TODO "Liquid X" a "Liquid".
     """
     normalized = [normalize_phase_name(p) for p in phases]
+
+    # Regla especial para 35%: todo líquido es "Liquid" a secas
+    if cao_pct == 35.0:
+        return ["Liquid" if p.startswith("Liquid") else p for p in normalized]
 
     # detectar líquidos
     liquid_indices = set()
@@ -513,12 +517,31 @@ def plot_phase_diagram(
         dx, dy = (0.0, 0.0)
         if cao_pct in ZONE_LABEL_OFFSETS:
             dx, dy = ZONE_LABEL_OFFSETS[cao_pct].get(zone_id, (0.0, 0.0))
-        tax.text(x + dx, y + dy, str(zone_id), transform=tax.transAxes,
-                 ha="center", va="center", fontsize=9, color="black")
+        
+        # Check if this requires an arrow 
+        # 35% CaO: zones 6, 7, 10
+        # 40% CaO: zones 1, 7
+        need_arrow = False
+        if cao_pct == 35.0 and zone_id in [6, 7, 10]:
+            need_arrow = True
+        elif cao_pct == 40.0 and zone_id in [1, 6, 7]:
+            need_arrow = True
+
+        if need_arrow:
+             tax.annotate(
+                str(zone_id),
+                xy=(x, y), xycoords='axes fraction',
+                xytext=(x + dx, y + dy), textcoords='axes fraction',
+                arrowprops=dict(arrowstyle="-", color="black", linewidth=0.8),
+                ha="center", va="center", fontsize=9, color="black"
+            )
+        else:
+            tax.text(x + dx, y + dy, str(zone_id), transform=tax.transAxes,
+                     ha="center", va="center", fontsize=9, color="black")
 
     for b in blocks:
         # 1) normaliza fases sin agrupar, 2) asigna variantes de liquid si aplica
-        clean_phases = assign_liquid_variants(b.phases_raw)
+        clean_phases = assign_liquid_variants(b.phases_raw, cao_pct=cao_pct)
 
         if any(p.startswith("Liquid") for p in clean_phases):
             has_any_liquid = True
@@ -564,13 +587,14 @@ def plot_phase_diagram(
                     zone_points.setdefault(zone_id, []).extend(pts_for_zone)
 
     # Etiquetas (centroide) por zona
-    for zid, pts in zone_points.items():
-        if not pts:
-            continue
-        c_t = float(np.mean([p[0] for p in pts]))
-        c_l = float(np.mean([p[1] for p in pts]))
-        c_r = float(np.mean([p[2] for p in pts]))
-        place_zone_label(zid, c_t, c_l, c_r)
+    if cao_pct != 30.0:
+        for zid, pts in zone_points.items():
+            if not pts:
+                continue
+            c_t = float(np.mean([p[0] for p in pts]))
+            c_l = float(np.mean([p[1] for p in pts]))
+            c_r = float(np.mean([p[2] for p in pts]))
+            place_zone_label(zid, c_t, c_l, c_r)
 
     tax.set_title(
         f"Diagrama ternario (Al$_2$O$_3$ {al2o3_pct}%, MnO {mno_pct}%) - CaO {cao_pct:g}%",
@@ -581,11 +605,19 @@ def plot_phase_diagram(
     # Texto "LIQUID" si hay algún líquido
     if has_any_liquid:
         pos = LIQUID_TEXT_POS.get(float(cao_pct), LIQUID_TEXT_DEFAULT)
-        tax.text(pos[0], pos[1], "LIQUID", transform=tax.transAxes,
+        tax.text(pos[0], pos[1], "Liquid", transform=tax.transAxes,
                  ha="center", va="center", fontsize=12, clip_on=False)
 
     # Leyenda (lista de zonas -> fases). Sin agrupar.
-    if zone_order:
+    if cao_pct == 30.0:
+        # Petición usuario: solo texto abajo "Liquid + MgO + (Fe,Mg)O" y quitar cuadro
+        tax.text(
+            0.5, 0.2,
+            "Liquid + MgO + (Fe,Mg)O",
+            transform=tax.transAxes,
+            ha="center", va="top", fontsize=10, color="black"
+        )
+    elif zone_order:
         legend_pos = ZONE_LEGEND_POS.get(float(cao_pct), (0.02, 0.98))
         lines = []
         for zone_key in zone_order:
